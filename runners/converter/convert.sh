@@ -3,14 +3,17 @@
 # Arguments:
 #   $1 = input file path
 #   $2 = output file path
-#   $3 = input file type (txt, md, jpg, png)
+# File type is auto-detected from the input filename extension.
 
 INPUT=$1
 OUTPUT=$2
-TYPE=$3
+
+# Detect type from the extension of the input filename
+TYPE="${INPUT##*.}"
+TYPE=$(echo "$TYPE" | tr '[:upper:]' '[:lower:]')
 
 if [ "$TYPE" = "txt" ] || [ "$TYPE" = "md" ]; then
-  # Check if the input file contains non‑ASCII characters
+  # Check if the input file contains non-ASCII characters
   if grep -qP '[^\x00-\x7F]' "$INPUT"; then
     echo "Unicode detected — using xelatex"
     pandoc "$INPUT" -o "$OUTPUT" --pdf-engine=xelatex

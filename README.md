@@ -1,64 +1,145 @@
-# faas-converter
+# ⚡ FaaS Platform — Function-as-a-Service
 
-This repository runs a local file conversion service using FastAPI and Docker.
-The service accepts uploaded files and converts them to PDF using a Docker container.
+A self-hosted **Function-as-a-Service** platform where users upload Python scripts and the platform automatically builds a Docker image and runs each function in an isolated container.
 
-## What this does
-- `main.py` starts a FastAPI web server
-- `converter.py` writes uploads to a temporary folder, launches a Docker container, and returns the converted file
-- `runners/converter/convert.sh` performs the actual conversion inside the container
-- supported input types: `txt`, `md`, `jpg`, `jpeg`, `png`
-- output format: `pdf`
+---
 
-## Prerequisites
-1. Install Python 3.x
-2. Install project Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Install Docker Desktop on your local device and make sure it is running
-   - Docker is required because the conversion happens inside the `faas-converter` container
-4. (Optional) If you want native Windows TeX support outside Docker, install MiKTeX from:
-   https://miktex.org/download?utm_source=copilot.com
-   - Note: the Docker container already includes `texlive-xetex`, so MiKTeX is not required for the Docker-based service.
+## Architecture
 
-## Build the Docker image
-From the repository root, run:
-
-```bash
-cd runners/converter
-docker build -t faas-converter .
+```
+Browser / API Client
+       │  HTTP
+       ▼
+┌─────────────────────┐
+│   FastAPI Gateway   │  ← main.py
+│  (function_registry │
+│   + runner)         │
+└──────────┬──────────┘
+           │  Docker SDK
+    ┌──────┴──────────────────┐
+    │                         │
+    ▼                         ▼
+faas-converter        faas-fn-<name>
+(convert-to-pdf)      (user functions)
+    ▼                         ▼
+faas-fn-image-grayscale   faas-fn-image-resize
 ```
 
-## Run the service locally
-From the repository root, run:
+**Key properties (true FaaS):**
+- Each function runs in its own **isolated Docker container**
+- Containers are **ephemeral** — created per request, destroyed after
+- User scripts get their own **auto-built Docker image** with dependencies
+- **Concurrency control** via semaphore (max 4 parallel containers)
+- **Resource limits** per container (memory capped at 256 MB)
+- **No network access** inside containers (security)
 
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+---
+
+## Built-in Functions
+
+| Function | Input | Output | Description |
+|---|---|---|---|
+| `convert-to-pdf` | txt, md, jpg, png | pdf | Pandoc + ImageMagick |
+| `image-grayscale` | jpg, png, bmp, webp | png | Pillow grayscale |
+| `image-resize` | jpg, png, bmp, webp | png | Pillow resize (params: width, height) |
+
+---
+
+## Quick Start
+
+### Step 1 — Build runner images (once)
+```bat
+build-runners.bat
 ```
 
-Then open or call:
-
-- Health check: `http://127.0.0.1:8000/`
-- Conversion endpoint: `http://127.0.0.1:8000/convert`
-
-## Example request
-Use `curl` to upload a file and request PDF conversion:
-
+### Step 2 — Install gateway dependencies
 ```bash
-curl -X POST "http://127.0.0.1:8000/convert" \
-  -F "file=@path/to/input.md" \
-  -F "target_format=pdf" \
-  --output converted.pdf
+pip install -r requirements.txt
 ```
 
-## Notes
-- The converter uses a temporary host directory mounted into Docker so the container can read the input file and write the output file.
-- If Docker is not running or the image is not built, the conversion will fail.
-- Supported input formats are limited to `txt`, `md`, `jpg`, `jpeg`, and `png`.
-- The returned download file is named `converted.pdf` by default.
+### Step 3 — Start the gateway
+```bash
+# Option A: direct
+uvicorn main:app --reload --port 8000
 
-## Troubleshooting
-- If you see Docker volume or permission errors on Windows, confirm Docker Desktop is running and file sharing is enabled.
-- If conversion fails for text files, the container chooses `pdflatex` or `xelatex` automatically based on file content.
-- If you installed MiKTeX for local Windows use, keep in mind the current project flow still uses Docker for conversion.
+# Option B: Docker Compose
+docker-compose up --build
+```
+
+### Step 4 — Open the UI
+```
+http://localhost:8000
+```
+
+---
+
+## Deploying a Custom Function
+
+Your script must follow this contract:
+
+```python
+# function.py
+import sys
+
+def process(input_path, output_path):
+    # Read from input_path, write result to output_path
+    ...
+
+if __name__ == "__main__":
+    process(sys.argv[1], sys.argv[2])
+```
+
+Upload via UI → **Deploy** tab, or via API:
+
+```bash
+curl -X POST http://localhost:8000/api/functions/deploy \
+  -F "name=my-function" \
+  -F "description=Does something cool" \
+  -F "input_formats=jpg,png" \
+  -F "output_format=png" \
+  -F "script=@function.py" \
+  -F "requirements=@requirements.txt"
+```
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/functions` | List all functions |
+| GET | `/api/functions/{name}` | Get function details |
+| POST | `/api/functions/deploy` | Deploy a new function |
+| DELETE | `/api/functions/{name}` | Remove a function |
+| POST | `/api/functions/{name}/invoke` | Invoke with a file |
+| GET | `/api/health` | Health check |
+| GET | `/api/stats` | Platform statistics |
+
+---
+
+## Project Structure
+
+```
+faas-fileconverter/
+├── main.py                  # FastAPI gateway
+├── function_registry.py     # Function management + image building
+├── runner.py                # Docker container execution engine
+├── requirements.txt
+├── Dockerfile               # Gateway image
+├── docker-compose.yml
+├── build-runners.bat        # Build all runner images
+├── static/
+│   └── index.html           # Web UI
+└── runners/
+    ├── converter/           # convert-to-pdf runner
+    │   ├── Dockerfile
+    │   └── convert.sh
+    ├── image-grayscale/     # grayscale runner
+    │   ├── Dockerfile
+    │   ├── requirements.txt
+    │   └── function.py
+    └── image-resize/        # resize runner
+        ├── Dockerfile
+        ├── requirements.txt
+        └── function.py
+```

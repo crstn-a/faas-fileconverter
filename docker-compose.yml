@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: faas-gateway
+    container_name: faas-gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount Docker socket so the gateway can spin up sibling containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist the function registry between restarts
+      - ./functions.json:/app/functions.json
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

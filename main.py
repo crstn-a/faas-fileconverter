@@ -1,136 +1,231 @@
-# main.py — FastAPI server that acts as the FaaS Gateway
-# Receives HTTP requests, validates sizes/formats, and invokes the conversion service.
+# main.py — FaaS Platform Gateway (v2)
+# Serves the web UI, exposes function management + invocation APIs.
 
 import os
 import uuid
 import time
 import shutil
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import FileResponse
+import json
+from pathlib import Path
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from converter import convert_file
+from function_registry import FunctionRegistry
+from runner import run_function
 
 # ---------------------------------------------------------------------------
-# Logging Setup
+# Logging
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(name)-18s  %(levelname)-5s  %(message)s",
+    format="%(asctime)s  %(name)-20s  %(levelname)-5s  %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("faas.gateway")
 
 # ---------------------------------------------------------------------------
-# FastAPI Application & Constants
+# App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="FaaS File Converter",
-    description="A self-hosted Function-as-a-Service for file conversion using Docker.",
-    version="1.0.0",
+    title="FaaS Platform",
+    description="Self-hosted Function-as-a-Service with Docker isolation",
+    version="2.0.0",
 )
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB limit
-SUPPORTED_FORMATS = ["txt", "md", "jpg", "jpeg", "png"]
+BASE_DIR = Path(__file__).parent
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+registry = FunctionRegistry()
+
+_stats = {
+    "total_invocations":    0,
+    "successful_invocations": 0,
+    "failed_invocations":   0,
+    "total_deployments":    0,
+    "started_at":           time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+}
+
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 
 # ---------------------------------------------------------------------------
-# HTTP Middleware (Request ID & Execution Timing)
+# Middleware
 # ---------------------------------------------------------------------------
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
-    # Generate unique 8-character ID for request tracing
-    request_id = str(uuid.uuid4())[:8]
-    request.state.request_id = request_id
-    
-    start_time = time.time()
-    logger.info("[%s] → %s %s", request_id, request.method, request.url.path)
-    
-    response = await call_next(request)
-    
-    elapsed = time.time() - start_time
-    logger.info("[%s] ← %s (%.2fs)", request_id, response.status_code, elapsed)
-    
-    # Propagate ID to response header for debugging
-    response.headers["X-Request-ID"] = request_id
-    return response
+async def request_middleware(request: Request, call_next):
+    rid   = str(uuid.uuid4())[:8]
+    request.state.rid = rid
+    t0    = time.time()
+    logger.info("[%s] → %s %s", rid, request.method, request.url.path)
+    resp  = await call_next(request)
+    logger.info("[%s] ← %s  %.2fs", rid, resp.status_code, time.time() - t0)
+    resp.headers["X-Request-ID"] = rid
+    return resp
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# UI
 # ---------------------------------------------------------------------------
-@app.get("/")
-def health_check():
-    """Simple status endpoint reporting current configurations."""
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def serve_ui():
+    html_path = BASE_DIR / "static" / "index.html"
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+# ---------------------------------------------------------------------------
+# Health & Stats
+# ---------------------------------------------------------------------------
+@app.get("/api/health")
+def health():
+    return {"status": "running", "version": "2.0.0", "uptime_since": _stats["started_at"]}
+
+@app.get("/api/stats")
+def stats():
+    fns = registry.list_functions()
     return {
-        "status": "running",
-        "service": "FaaS File Converter",
-        "version": "1.0.0",
-        "supported_formats": SUPPORTED_FORMATS,
-        "max_file_size_mb": MAX_FILE_SIZE_BYTES // (1024 * 1024),
+        **_stats,
+        "total_functions":  len(fns),
+        "builtin_functions": sum(1 for f in fns if f.get("builtin")),
+        "user_functions":   sum(1 for f in fns if not f.get("builtin")),
     }
 
+# ---------------------------------------------------------------------------
+# Function Management
+# ---------------------------------------------------------------------------
+@app.get("/api/functions")
+def list_functions():
+    return registry.list_functions()
 
-@app.post("/convert")
-async def convert(
-    request: Request,
-    file: UploadFile = File(...),
-    target_format: str = "pdf"
+@app.get("/api/functions/{name}")
+def get_function(name: str):
+    fn = registry.get_function(name)
+    if not fn:
+        raise HTTPException(404, f"Function '{name}' not found")
+    return fn
+
+@app.post("/api/functions/deploy", status_code=201)
+async def deploy_function(
+    name:          str       = Form(...),
+    description:   str       = Form(""),
+    input_formats: str       = Form("jpg,jpeg,png"),   # comma-separated
+    output_format: str       = Form("png"),
+    script:        UploadFile = File(...),
+    requirements:  UploadFile = File(None),
 ):
-    """
-    Handles file upload and passes it to the Docker converter.
-    Returns the converted file and schedules a clean-up of temporary files on disk.
-    """
-    request_id = getattr(request.state, "request_id", "unknown")
+    """Deploy a new Python function and build its Docker image automatically."""
+    # Sanitise name
+    name = name.strip().lower().replace(" ", "-")
+    if not name.isidentifier() and not all(c.isalnum() or c == "-" for c in name):
+        raise HTTPException(400, "Name must contain only letters, numbers, and hyphens")
 
-    # 1. Validation: Ensure file exists
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided.")
+    script_bytes = await script.read()
+    req_bytes    = b""
+    if requirements and requirements.filename:
+        req_bytes = await requirements.read()
 
-    # 2. Validation: Ensure format is supported
-    extension = file.filename.rsplit(".", 1)[-1].lower()
-    if extension not in SUPPORTED_FORMATS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported format: .{extension}. Supported: {SUPPORTED_FORMATS}"
-        )
+    formats = [f.strip().lower() for f in input_formats.split(",") if f.strip()]
 
-    # 3. Validation: Limit file upload size
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE_BYTES:
-        size_mb = len(contents) / (1024 * 1024)
-        limit_mb = MAX_FILE_SIZE_BYTES / (1024 * 1024)
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large: {size_mb:.1f} MB. Maximum allowed: {limit_mb:.0f} MB."
-        )
-
-    logger.info(
-        "[%s] File accepted: %s (%d bytes) -> %s",
-        request_id, file.filename, len(contents), target_format
-    )
-
-    # 4. Invoke Docker conversion service
     try:
-        output_path = convert_file(
-            contents, 
-            file.filename, 
-            target_format, 
-            request_id=request_id
+        fn = registry.deploy_function(
+            name=name,
+            description=description,
+            script_bytes=script_bytes,
+            requirements_bytes=req_bytes,
+            input_formats=formats,
+            output_format=output_format.strip().lower(),
         )
+        _stats["total_deployments"] += 1
+        return fn
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
-        logger.error("[%s] Conversion failed: %s", request_id, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Deploy failed")
+        raise HTTPException(500, str(e))
 
-    # 5. Build file response and schedule background deletion of local temp folder
+@app.delete("/api/functions/{name}", status_code=204)
+def delete_function(name: str):
+    try:
+        registry.delete_function(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+# ---------------------------------------------------------------------------
+# Function Invocation
+# ---------------------------------------------------------------------------
+@app.post("/api/functions/{name}/invoke")
+async def invoke_function(
+    request: Request,
+    name:    str,
+    file:    UploadFile = File(...),
+    params:  str        = Form("{}"),   # JSON string of extra params
+):
+    """Invoke a deployed function with an uploaded file."""
+    rid = getattr(request.state, "rid", "?")
+
+    fn = registry.get_function(name)
+    if not fn:
+        raise HTTPException(404, f"Function '{name}' not found")
+
+    if not file.filename:
+        raise HTTPException(400, "No file provided")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+    if ext not in fn["input_formats"]:
+        raise HTTPException(
+            400,
+            f"Function '{name}' does not accept .{ext} files. "
+            f"Supported: {fn['input_formats']}"
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large. Max: {MAX_FILE_SIZE // (1024*1024)} MB")
+
+    try:
+        extra = json.loads(params)
+    except Exception:
+        extra = {}
+
+    # Build env vars from extra params (for resize etc.)
+    env_vars = {}
+    for k, v in extra.items():
+        env_vars[k.upper()] = str(v)
+    # Map width/height to the vars the resize function expects
+    if "width" in extra:
+        env_vars["RESIZE_WIDTH"] = str(extra["width"])
+    if "height" in extra:
+        env_vars["RESIZE_HEIGHT"] = str(extra["height"])
+
+    _stats["total_invocations"] += 1
+
+    try:
+        output_path = run_function(
+            image=fn["image"],
+            input_bytes=contents,
+            filename=file.filename,
+            output_format=fn["output_format"],
+            env_vars=env_vars,
+            request_id=rid,
+        )
+        registry.record_invocation(name)
+        _stats["successful_invocations"] += 1
+    except Exception as e:
+        _stats["failed_invocations"] += 1
+        logger.error("[%s] Invocation failed: %s", rid, e)
+        raise HTTPException(500, str(e))
+
     tmp_dir = os.path.dirname(output_path)
-    
-    def cleanup_temp_dir():
+    out_ext = fn["output_format"]
+
+    def cleanup():
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        logger.info("[%s] Temp directory cleaned up: %s", request_id, tmp_dir)
 
     return FileResponse(
         path=output_path,
-        filename=f"converted.{target_format}",
+        filename=f"{name}_output.{out_ext}",
         media_type="application/octet-stream",
-        background=BackgroundTask(cleanup_temp_dir)
+        background=BackgroundTask(cleanup),
     )

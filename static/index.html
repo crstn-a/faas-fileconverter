@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FaaS Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0d14;--bg2:#0f1320;--bg3:#161b2e;--card:#1a2035;
+  --border:#252d45;--accent:#7c3aed;--accent2:#6d28d9;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;
+  --text:#e2e8f0;--muted:#64748b;--mono:'JetBrains Mono',monospace;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden}
+/* Sidebar */
+#sidebar{width:240px;min-width:240px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:24px 0}
+.logo{padding:0 20px 24px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.logo-title{font-size:18px;font-weight:700;background:linear-gradient(135deg,#7c3aed,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.logo-sub{font-size:11px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+nav a{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;border-left:3px solid transparent;transition:all .2s}
+nav a:hover{color:var(--text);background:rgba(124,58,237,.08)}
+nav a.active{color:#a78bfa;border-left-color:#7c3aed;background:rgba(124,58,237,.12)}
+nav a .icon{font-size:16px}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
+.status-dot{width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;margin-right:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Main */
+#main{flex:1;overflow-y:auto}
+.page{display:none;padding:32px;animation:fadein .3s ease}
+.page.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+h1{font-size:24px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:28px}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.grid{display:grid;gap:16px}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.stat-val{font-size:32px;font-weight:700;margin:4px 0}
+.stat-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+/* Function cards */
+.fn-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color .2s,transform .2s}
+.fn-card:hover{border-color:#7c3aed;transform:translateY(-2px)}
+.fn-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.fn-name{font-size:15px;font-weight:600;font-family:var(--mono)}
+.fn-badge{font-size:10px;padding:3px 8px;border-radius:20px;font-weight:600;text-transform:uppercase}
+.badge-builtin{background:rgba(59,130,246,.2);color:#60a5fa}
+.badge-user{background:rgba(16,185,129,.2);color:#34d399}
+.fn-desc{font-size:13px;color:var(--muted);margin-bottom:12px}
+.fn-formats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px}
+.fmt-tag{font-size:11px;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--muted);font-family:var(--mono)}
+.fn-actions{display:flex;gap:8px}
+
+/* Buttons */
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{border-color:var(--accent);color:#a78bfa}
+.btn-danger{background:transparent;color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.btn-danger:hover{background:rgba(239,68,68,.1)}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Forms */
+.form-group{margin-bottom:18px}
+label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;color:#94a3b8}
+input,select,textarea{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px;font-family:'Inter',sans-serif;transition:border-color .2s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:80px;resize:vertical}
+.drop-zone{border:2px dashed var(--border);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg2)}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:rgba(124,58,237,.06)}
+.drop-zone .dz-icon{font-size:32px;margin-bottom:8px}
+.drop-zone p{font-size:14px;color:var(--muted)}
+.drop-zone .dz-file{font-size:13px;color:var(--green);margin-top:6px;font-family:var(--mono)}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Result / Log */
+.result-box{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;font-family:var(--mono);font-size:13px;min-height:80px;white-space:pre-wrap;overflow-x:auto}
+.result-box.success{border-color:var(--green);color:var(--green)}
+.result-box.error{border-color:var(--red);color:#fca5a5}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 20px;font-size:14px;z-index:999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:320px}
+#toast.show{transform:translateY(0);opacity:1}
+#toast.ok{border-color:var(--green);color:var(--green)}
+#toast.err{border-color:var(--red);color:#fca5a5}
+
+/* Misc */
+.flex{display:flex;align-items:center;gap:12px}
+.mt-16{margin-top:16px}
+hr.sep{border:none;border-top:1px solid var(--border);margin:24px 0}
+.tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    <div class="logo-title">⚡ FaaS Platform</div>
+    <div class="logo-sub">Function-as-a-Service v2.0</div>
+  </div>
+  <nav>
+    <a href="#" class="active" data-page="dashboard"><span class="icon">🏠</span>Dashboard</a>
+    <a href="#" data-page="functions"><span class="icon">⚙️</span>Functions</a>
+    <a href="#" data-page="invoke"><span class="icon">▶️</span>Invoke</a>
+    <a href="#" data-page="deploy"><span class="icon">🚀</span>Deploy</a>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="status-dot"></span><span style="font-size:13px;color:var(--muted)">API Running</span>
+  </div>
+</aside>
+
+<main id="main">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <h1>Dashboard</h1>
+    <p class="subtitle">FaaS Platform overview and activity</p>
+    <div class="grid grid-4">
+      <div class="stat-card"><div class="stat-label">Functions</div><div class="stat-val" id="s-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Invocations</div><div class="stat-val" id="s-invoke">—</div></div>
+      <div class="stat-card"><div class="stat-label">Successful</div><div class="stat-val" style="color:var(--green)" id="s-ok">—</div></div>
+      <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-val" style="color:var(--red)" id="s-fail">—</div></div>
+    </div>
+    <hr class="sep"/>
+    <h2 style="font-size:16px;margin-bottom:16px">Available Functions</h2>
+    <div class="grid grid-2" id="dash-fn-list"></div>
+  </div>
+
+  <!-- FUNCTIONS -->
+  <div class="page" id="page-functions">
+    <h1>Functions</h1>
+    <p class="subtitle">All deployed functions</p>
+    <div class="grid grid-2" id="fn-list"></div>
+  </div>
+
+  <!-- INVOKE -->
+  <div class="page" id="page-invoke">
+    <h1>Invoke Function</h1>
+    <p class="subtitle">Run a function with a file</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="form-group">
+          <label>Select Function</label>
+          <select id="inv-fn">
+            <option value="">Loading…</option>
+          </select>
+        </div>
+        <div id="inv-params-area"></div>
+        <div class="form-group">
+          <label>Input File</label>
+          <div class="drop-zone" id="inv-dropzone">
+            <div class="dz-icon">📂</div>
+            <p>Drag & drop or click to select</p>
+            <div class="dz-file" id="inv-dz-label"></div>
+            <input type="file" id="inv-file" style="display:none"/>
+          </div>
+          <p class="hint" id="inv-fmt-hint"></p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="inv-btn" style="flex:1">▶ Run Function</button>
+          <button class="btn btn-outline" id="inv-reset-btn" title="Clear and start over">↺ Reset</button>
+        </div>
+      </div>
+      <div class="card">
+        <label style="font-size:13px;font-weight:500;margin-bottom:8px;display:block">Output / Log</label>
+        <div class="result-box" id="inv-result">Waiting for invocation…</div>
+        <div id="inv-download-area" class="mt-16"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEPLOY -->
+  <div class="page" id="page-deploy">
+    <h1>Deploy Function</h1>
+    <p class="subtitle">Upload a Python script — a Docker image is built automatically</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="form-group">
+          <label>Function Name <span style="color:var(--red)">*</span></label>
+          <input id="dep-name" type="text" placeholder="my-function"/>
+          <p class="hint">Lowercase letters, numbers and hyphens only</p>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input id="dep-desc" type="text" placeholder="What does this function do?"/>
+        </div>
+        <div class="form-group">
+          <label>Accepted Input Formats</label>
+          <input id="dep-infmt" type="text" placeholder="jpg,png,txt" value="jpg,png"/>
+          <p class="hint">Comma-separated file extensions</p>
+        </div>
+        <div class="form-group">
+          <label>Output Format</label>
+          <input id="dep-outfmt" type="text" placeholder="png" value="png"/>
+        </div>
+        <div class="form-group">
+          <label>Function Script (function.py) <span style="color:var(--red)">*</span></label>
+          <div class="drop-zone" id="dep-script-dz">
+            <div class="dz-icon">🐍</div>
+            <p>Drop your Python script here</p>
+            <div class="dz-file" id="dep-script-label"></div>
+            <input type="file" id="dep-script" accept=".py" style="display:none"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>requirements.txt <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+          <div class="drop-zone" id="dep-req-dz">
+            <div class="dz-icon">📦</div>
+            <p>Drop requirements.txt here</p>
+            <div class="dz-file" id="dep-req-label"></div>
+            <input type="file" id="dep-req" accept=".txt" style="display:none"/>
+          </div>
+          <p class="hint">Dependencies will be pip-installed automatically in the container</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="dep-btn" style="flex:1">🚀 Deploy Function</button>
+          <button class="btn btn-outline" id="dep-reset-btn" title="Clear and start over">↺ Reset</button>
+        </div>
+      </div>
+      <div class="card">
+        <label style="font-size:13px;font-weight:500;margin-bottom:8px;display:block">Deploy Log</label>
+        <div class="result-box" id="dep-log">Awaiting deployment…</div>
+        <hr class="sep"/>
+        <div style="font-size:13px;color:var(--muted)">
+          <p style="margin-bottom:10px;font-weight:500;color:var(--text)">📋 Function Script Contract</p>
+          <p>Your <code style="font-family:var(--mono);color:#a78bfa">function.py</code> must accept two positional args:</p>
+          <pre class="result-box mt-16" style="color:#a78bfa">import sys
+
+def process(input_path, output_path):
+    # read input_path, write to output_path
+    ...
+
+if __name__ == "__main__":
+    process(sys.argv[1], sys.argv[2])</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const API = '';
+
+// ─── Navigation ───────────────────────────────────────────────
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    const page = a.dataset.page;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'functions') loadFunctions();
+    if (page === 'invoke')    loadInvokePage();
+  });
+});
+
+// ─── Toast ────────────────────────────────────────────────────
+function toast(msg, ok = true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (ok ? 'ok' : 'err');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.className = '', 3000);
+}
+
+// ─── Drop zone helper ─────────────────────────────────────────
+function setupDropzone(dzId, inputId, labelId) {
+  const dz = document.getElementById(dzId);
+  const inp = document.getElementById(inputId);
+  const lbl = document.getElementById(labelId);
+  // Reset value before click so the same file can be re-selected and fire 'change'
+  dz.addEventListener('click', () => { inp.value = ''; inp.click(); });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    if (e.dataTransfer.files.length) {
+      // Use DataTransfer to assign dropped files
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      inp.files = dt.files;
+      lbl.textContent = '✓ ' + e.dataTransfer.files[0].name;
+    }
+  });
+  inp.addEventListener('change', () => {
+    if (inp.files.length) lbl.textContent = '✓ ' + inp.files[0].name;
+  });
+}
+
+setupDropzone('inv-dropzone', 'inv-file', 'inv-dz-label');
+setupDropzone('dep-script-dz', 'dep-script', 'dep-script-label');
+setupDropzone('dep-req-dz', 'dep-req', 'dep-req-label');
+
+// ─── Dashboard ────────────────────────────────────────────────
+async function loadDashboard() {
+  const [stats, fns] = await Promise.all([
+    fetch('/api/stats').then(r => r.json()),
+    fetch('/api/functions').then(r => r.json()),
+  ]);
+  document.getElementById('s-total').textContent = stats.total_functions;
+  document.getElementById('s-invoke').textContent = stats.total_invocations;
+  document.getElementById('s-ok').textContent = stats.successful_invocations;
+  document.getElementById('s-fail').textContent = stats.failed_invocations;
+  renderFnCards('dash-fn-list', fns, true);
+}
+loadDashboard();
+
+// ─── Functions page ───────────────────────────────────────────
+async function loadFunctions() {
+  const fns = await fetch('/api/functions').then(r => r.json());
+  renderFnCards('fn-list', fns, false);
+}
+
+function renderFnCards(containerId, fns, compact) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = fns.map(fn => `
+    <div class="fn-card">
+      <div class="fn-header">
+        <span class="fn-name">${fn.name}</span>
+        <span class="fn-badge ${fn.builtin ? 'badge-builtin' : 'badge-user'}">${fn.builtin ? 'built-in' : 'custom'}</span>
+      </div>
+      <p class="fn-desc">${fn.description || 'No description'}</p>
+      <div class="fn-formats">
+        ${fn.input_formats.map(f => `<span class="fmt-tag">.${f}</span>`).join('')}
+        <span style="font-size:11px;color:var(--muted);align-self:center">→</span>
+        <span class="fmt-tag" style="color:#a78bfa">.${fn.output_format}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Invocations: <b>${fn.invocations || 0}</b></div>
+      <div class="fn-actions">
+        <button class="btn btn-primary btn-sm" onclick="goInvoke('${fn.name}')">▶ Invoke</button>
+        ${!fn.builtin ? `<button class="btn btn-danger btn-sm" onclick="deleteFn('${fn.name}')">🗑 Delete</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function goInvoke(name) {
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  document.querySelector('[data-page="invoke"]').classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-invoke').classList.add('active');
+  loadInvokePage(name);
+}
+
+async function deleteFn(name) {
+  if (!confirm(`Delete function "${name}"?`)) return;
+  const r = await fetch(`/api/functions/${name}`, { method: 'DELETE' });
+  if (r.ok) { toast(`Deleted "${name}"`); loadFunctions(); }
+  else toast('Delete failed', false);
+}
+
+// ─── Invoke page ──────────────────────────────────────────────
+let _fns = [];
+async function loadInvokePage(selectName) {
+  _fns = await fetch('/api/functions').then(r => r.json());
+  const sel = document.getElementById('inv-fn');
+  sel.innerHTML = _fns.map(f => `<option value="${f.name}">${f.name} (.${f.output_format})</option>`).join('');
+  if (selectName) sel.value = selectName;
+  updateInvokeHint();
+}
+
+document.getElementById('inv-fn').addEventListener('change', updateInvokeHint);
+
+function updateInvokeHint() {
+  const name = document.getElementById('inv-fn').value;
+  const fn   = _fns.find(f => f.name === name);
+  if (!fn) return;
+  document.getElementById('inv-fmt-hint').textContent =
+    `Accepts: ${fn.input_formats.map(f => '.' + f).join(', ')} → .${fn.output_format}`;
+  const area = document.getElementById('inv-params-area');
+  // Show extra params for resize
+  if (fn.params && Object.keys(fn.params).length > 0) {
+    area.innerHTML = Object.entries(fn.params).map(([k, p]) => `
+      <div class="form-group">
+        <label>${k} <span style="color:var(--muted)">(default: ${p.default})</span></label>
+        <input id="param-${k}" type="number" value="${p.default}" placeholder="${p.description}"/>
+      </div>`).join('');
+  } else {
+    area.innerHTML = '';
+  }
+}
+
+document.getElementById('inv-btn').addEventListener('click', async () => {
+  const name  = document.getElementById('inv-fn').value;
+  const fn    = _fns.find(f => f.name === name);
+  const file  = document.getElementById('inv-file').files[0];
+  const btn   = document.getElementById('inv-btn');
+  const result = document.getElementById('inv-result');
+  const dlArea = document.getElementById('inv-download-area');
+
+  if (!file) { toast('Please select a file', false); return; }
+
+  // Build extra params
+  const params = {};
+  if (fn && fn.params) {
+    Object.keys(fn.params).forEach(k => {
+      const el = document.getElementById('param-' + k);
+      if (el) params[k] = parseInt(el.value, 10);
+    });
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  result.className = 'result-box';
+  result.textContent = 'Invoking container…';
+  dlArea.innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('params', JSON.stringify(params));
+
+  try {
+    const r = await fetch(`/api/functions/${name}/invoke`, { method: 'POST', body: fd });
+    if (!r.ok) {
+      const err = await r.json();
+      result.className = 'result-box error';
+      result.textContent = '✗ Error: ' + (err.detail || r.statusText);
+      toast('Invocation failed', false);
+    } else {
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const ext  = fn ? fn.output_format : 'out';
+      result.className = 'result-box success';
+      result.textContent = `✓ Success!\nFunction: ${name}\nInput: ${file.name} (${(file.size/1024).toFixed(1)} KB)\nOutput: ${name}_output.${ext}`;
+      dlArea.innerHTML = `<a href="${url}" download="${name}_output.${ext}" class="btn btn-primary" style="width:100%;justify-content:center">⬇ Download Result</a>`;
+      toast('Invocation complete!');
+    }
+  } catch (e) {
+    result.className = 'result-box error';
+    result.textContent = '✗ Network error: ' + e.message;
+    toast('Network error', false);
+  }
+  // Reset file input so a new file (or same file) can be selected next time
+  const fileInp = document.getElementById('inv-file');
+  fileInp.value = '';
+  document.getElementById('inv-dz-label').textContent = '';
+  btn.disabled = false;
+  btn.innerHTML = '▶ Run Function';
+});
+
+// ─── Reset button ────────────────────────────────────────────
+document.getElementById('inv-reset-btn').addEventListener('click', () => {
+  document.getElementById('inv-file').value = '';
+  document.getElementById('inv-dz-label').textContent = '';
+  const result = document.getElementById('inv-result');
+  result.className = 'result-box';
+  result.textContent = 'Waiting for invocation…';
+  document.getElementById('inv-download-area').innerHTML = '';
+  toast('Cleared!', true);
+});
+
+// ─── Deploy page ──────────────────────────────────────────────
+document.getElementById('dep-btn').addEventListener('click', async () => {
+  const name   = document.getElementById('dep-name').value.trim();
+  const desc   = document.getElementById('dep-desc').value.trim();
+  const infmt  = document.getElementById('dep-infmt').value.trim();
+  const outfmt = document.getElementById('dep-outfmt').value.trim();
+  const script = document.getElementById('dep-script').files[0];
+  const req    = document.getElementById('dep-req').files[0];
+  const log    = document.getElementById('dep-log');
+  const btn    = document.getElementById('dep-btn');
+
+  if (!name) { toast('Name is required', false); return; }
+  if (!script) { toast('Script file is required', false); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Building image…';
+  log.className = 'result-box';
+  log.textContent = `Deploying "${name}"…\nBuilding Docker image (this may take a minute)…`;
+
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('description', desc);
+  fd.append('input_formats', infmt);
+  fd.append('output_format', outfmt);
+  fd.append('script', script);
+  if (req) fd.append('requirements', req);
+
+  try {
+    const r = await fetch('/api/functions/deploy', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) {
+      log.className = 'result-box error';
+      log.textContent = '✗ Deploy failed:\n' + (data.detail || JSON.stringify(data, null, 2));
+      toast('Deploy failed', false);
+    } else {
+      log.className = 'result-box success';
+      log.textContent = `✓ Function "${data.name}" deployed!\nImage: ${data.image}\nInput: ${data.input_formats.join(', ')}\nOutput: .${data.output_format}`;
+      toast(`"${data.name}" deployed!`);
+    }
+  } catch (e) {
+    log.className = 'result-box error';
+    log.textContent = '✗ Network error: ' + e.message;
+    toast('Network error', false);
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🚀 Deploy Function';
+});
+
+// ─── Deploy reset button ──────────────────────────────────────
+document.getElementById('dep-reset-btn').addEventListener('click', () => {
+  document.getElementById('dep-name').value = '';
+  document.getElementById('dep-desc').value = '';
+  document.getElementById('dep-infmt').value = 'jpg,png';
+  document.getElementById('dep-outfmt').value = 'png';
+  document.getElementById('dep-script').value = '';
+  document.getElementById('dep-script-label').textContent = '';
+  document.getElementById('dep-req').value = '';
+  document.getElementById('dep-req-label').textContent = '';
+  const log = document.getElementById('dep-log');
+  log.className = 'result-box';
+  log.textContent = 'Awaiting deployment…';
+  toast('Cleared!', true);
+});
+</script>
+</body>
+</html>
