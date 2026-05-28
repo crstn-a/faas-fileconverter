@@ -136,6 +136,7 @@ class FileConverter:
             tar_stream = job.build_input_archive()
 
             # 2. Create the container (The Guest Chef - no volume mounts!)
+            # This is the line where the creation of the docker container is made:
             container = self.client.containers.create(
                 "faas-converter",
                 command=[
@@ -155,6 +156,7 @@ class FileConverter:
             container.put_archive("/files", tar_stream)
 
             # 4. Run the conversion process
+            # This is where the conversion actually happens: start the container
             container.start()
             
             # Wait for execution with explicit timeout

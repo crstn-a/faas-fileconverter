@@ -1,0 +1,81 @@
+{
+  "uppercase": {
+    "name": "uppercase",
+    "description": "uppercase",
+    "image": "faas-fn-uppercase:latest",
+    "builtin": false,
+    "input_formats": [
+      "txt"
+    ],
+    "output_format": "txt",
+    "params": {},
+    "created_at": "2026-05-28T00:07:30.639867+00:00",
+    "invocations": 1
+  },
+  "blackborder": {
+    "name": "blackborder",
+    "description": "Puts a blackborder on image",
+    "image": "faas-fn-blackborder:latest",
+    "builtin": false,
+    "input_formats": [
+      "jpg",
+      "png"
+    ],
+    "output_format": "png",
+    "params": {},
+    "created_at": "2026-05-28T00:40:41.267625+00:00",
+    "invocations": 1
+  },
+  "qrcode": {
+    "name": "qrcode",
+    "description": "generates a qrcode",
+    "image": "faas-fn-qrcode:latest",
+    "builtin": false,
+    "input_formats": [
+      "txt"
+    ],
+    "output_format": "png",
+    "params": {},
+    "created_at": "2026-05-28T00:46:49.506051+00:00",
+    "invocations": 2
+  },
+  "zip": {
+    "name": "zip",
+    "description": "zip",
+    "image": "faas-fn-zip:latest",
+    "builtin": false,
+    "input_formats": [
+      "txt"
+    ],
+    "output_format": "zip",
+    "params": {},
+    "created_at": "2026-05-28T06:24:12.552535+00:00",
+    "invocations": 0
+  },
+  "zip2": {
+    "name": "zip2",
+    "description": "zip",
+    "image": "faas-fn-zip2:latest",
+    "builtin": false,
+    "input_formats": [
+      "txt"
+    ],
+    "output_format": "zip",
+    "params": {},
+    "created_at": "2026-05-28T06:24:32.204622+00:00",
+    "invocations": 1
+  },
+  "zip3": {
+    "name": "zip3",
+    "description": "zip",
+    "image": "faas-fn-zip3:latest",
+    "builtin": false,
+    "input_formats": [
+      "txt"
+    ],
+    "output_format": "zip",
+    "params": {},
+    "created_at": "2026-05-28T06:26:36.530837+00:00",
+    "invocations": 0
+  }
+}

@@ -98,10 +98,14 @@ class FunctionRunner:
         try:
             logger.info("[%s] Invoking image=%s  %s -> %s", request_id, image, filename, output_format)
 
+            # Package the input file into an in-memory tarball for Docker
             tar_stream = job.build_input_archive()
 
+            # Merge any passed-in environment variables with the request ID
             env = {"FAAS_REQUEST_ID": request_id, **(env_vars or {})}
 
+            # This is the line where the creation of the docker container is made:
+            # Tell Docker to create a stopped container with restricted networking and memory
             container = self.client.containers.create(
                 image,
                 command=[
@@ -113,7 +117,9 @@ class FunctionRunner:
                 environment=env,
             )
 
+            # Upload the input file tarball into the container's /files directory
             container.put_archive("/files", tar_stream)
+            # This is where the conversion actually happens: start the container
             container.start()
 
             result = container.wait(timeout=self.timeout)

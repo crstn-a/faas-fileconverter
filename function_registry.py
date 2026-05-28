@@ -113,10 +113,12 @@ class FunctionRegistry:
         output_format: str,
     ) -> dict:
         """Deploy a new function by building a dedicated Docker image."""
+        # Check if the name conflicts with an existing built-in function to prevent overriding core functionality
         if name in self._functions and self._functions[name].get("builtin"):
             raise ValueError(f"Cannot override built-in function '{name}'")
 
         image_tag = f"faas-fn-{name}:latest"
+        # Call internal method to build the Docker image using the provided scripts and requirements
         self._build_image(image_tag, script_bytes, requirements_bytes)
 
         meta = {
@@ -153,13 +155,21 @@ class FunctionRegistry:
     # Private: build Docker image for a user-deployed function
     # ------------------------------------------------------------------
     def _build_image(self, image_tag: str, script_bytes: bytes, requirements_bytes: bytes):
+        """
+        Builds a Docker image dynamically. It creates a temporary directory, writes the user scripts,
+        generates a Dockerfile, and instructs the Docker engine to build the image.
+        """
+        # Create a temporary directory to serve as the Docker build context
         build_dir = tempfile.mkdtemp()
         try:
+            # Write the user's Python script into the build directory
             with open(os.path.join(build_dir, "function.py"), "wb") as f:
                 f.write(script_bytes)
+            # Write the user's requirements.txt into the build directory
             with open(os.path.join(build_dir, "requirements.txt"), "wb") as f:
                 f.write(requirements_bytes)
 
+            # Generate the Dockerfile on the fly: uses python 3.10 slim, installs requirements, copies the script
             dockerfile = (
                 "FROM python:3.10-slim\n"
                 "WORKDIR /app\n"
@@ -173,9 +183,12 @@ class FunctionRegistry:
                 f.write(dockerfile)
 
             logger.info("Building image: %s", image_tag)
+            # This is the line where the creation of the docker container/image is made:
+            # Tell Docker client to build the image from the temporary build context
             image, logs = self.client.images.build(
                 path=build_dir, tag=image_tag, rm=True, forcerm=True
             )
+            # Stream build logs for observability
             for chunk in logs:
                 if "stream" in chunk:
                     logger.debug("BUILD | %s", chunk["stream"].strip())

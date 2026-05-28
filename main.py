@@ -1,6 +1,9 @@
 # main.py — FaaS Platform Gateway (v2)
-# Serves the web UI, exposes function management + invocation APIs.
+# This file serves as the main entry point for the FastAPI web server.
+# It serves the web UI, exposes API endpoints for function management (deploy/list/delete), 
+# and handles incoming function invocation requests by routing them to the runner.
 
+# Import standard library modules for OS operations, UUIDs, time tracking, etc.
 import os
 import uuid
 import time
@@ -9,17 +12,20 @@ import logging
 import json
 from pathlib import Path
 
+# Import FastAPI components for web routing, file uploads, and background tasks
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
+# Import internal modules for function registry and execution
 from function_registry import FunctionRegistry
 from runner import run_function
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+# Configure logging to output timestamped, formatted messages for observability
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(name)-20s  %(levelname)-5s  %(message)s",
@@ -30,6 +36,7 @@ logger = logging.getLogger("faas.gateway")
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+# Initialize the FastAPI application instance with metadata
 app = FastAPI(
     title="FaaS Platform",
     description="Self-hosted Function-as-a-Service with Docker isolation",
@@ -114,8 +121,9 @@ async def deploy_function(
     requirements:  UploadFile = File(None),
 ):
     """Deploy a new Python function and build its Docker image automatically."""
-    # Sanitise name
+    # Sanitise name by stripping whitespace, making lowercase, and replacing spaces with hyphens
     name = name.strip().lower().replace(" ", "-")
+    # Ensure the name is a valid identifier (alphanumeric and hyphens only) to avoid injection or errors
     if not name.isidentifier() and not all(c.isalnum() or c == "-" for c in name):
         raise HTTPException(400, "Name must contain only letters, numbers, and hyphens")
 
@@ -127,6 +135,7 @@ async def deploy_function(
     formats = [f.strip().lower() for f in input_formats.split(",") if f.strip()]
 
     try:
+        # Call the registry to register the metadata and build the Docker image
         fn = registry.deploy_function(
             name=name,
             description=description,
@@ -135,6 +144,7 @@ async def deploy_function(
             input_formats=formats,
             output_format=output_format.strip().lower(),
         )
+        # Increment global stats for successful deployment
         _stats["total_deployments"] += 1
         return fn
     except ValueError as e:
@@ -189,19 +199,21 @@ async def invoke_function(
     except Exception:
         extra = {}
 
-    # Build env vars from extra params (for resize etc.)
+    # Build env vars from extra params (for resize etc.) to be passed to the Docker container
     env_vars = {}
     for k, v in extra.items():
         env_vars[k.upper()] = str(v)
-    # Map width/height to the vars the resize function expects
+    # Map width/height to the vars the resize function expects specifically
     if "width" in extra:
         env_vars["RESIZE_WIDTH"] = str(extra["width"])
     if "height" in extra:
         env_vars["RESIZE_HEIGHT"] = str(extra["height"])
 
+    # Increment global stats for total invocation attempts
     _stats["total_invocations"] += 1
 
     try:
+        # Execute the function by spinning up a Docker container via the runner
         output_path = run_function(
             image=fn["image"],
             input_bytes=contents,
@@ -210,6 +222,7 @@ async def invoke_function(
             env_vars=env_vars,
             request_id=rid,
         )
+        # Record the successful invocation in the registry for statistics
         registry.record_invocation(name)
         _stats["successful_invocations"] += 1
     except Exception as e:
@@ -220,9 +233,11 @@ async def invoke_function(
     tmp_dir = os.path.dirname(output_path)
     out_ext = fn["output_format"]
 
+    # Define a background task to cleanup the temporary directory after the file is sent to the client
     def cleanup():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    # Return the file response, attaching the cleanup task to execute after the response finishes
     return FileResponse(
         path=output_path,
         filename=f"{name}_output.{out_ext}",

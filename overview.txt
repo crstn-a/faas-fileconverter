@@ -1,0 +1,63 @@
+System Overview
+===============
+The system is a self-hosted Function-as-a-Service (FaaS) platform built using FastAPI (Python) and Docker. It allows users to deploy custom Python scripts as serverless functions and execute them in isolated Docker containers on-demand. The platform manages function registration, dynamic Docker image building, concurrent execution limits, and file passing between the host and the ephemeral containers.
+
+System Flow (Invocation)
+========================
+1. A user sends a POST request to `/api/functions/{name}/invoke` with an input file.
+2. The FastAPI server (`main.py`) validates the request and retrieves the function's metadata from the registry (`function_registry.py`).
+3. The server passes the file bytes to the global runner (`runner.py`).
+4. The `FunctionRunner` in `runner.py` prepares the environment:
+   - It acquires a concurrency semaphore.
+   - It creates a temporary directory.
+   - It packages the input file into an in-memory tarball for Docker.
+5. The runner creates a new, network-isolated Docker container using the function's specific Docker image.
+6. The tarball is streamed into the container, and the container is started.
+7. The container executes the function script (processing/converting the file) and saves the output locally inside the container.
+8. The runner waits for the container to finish, extracts the output file via another tar stream, and saves it to the host's temp directory.
+9. Finally, the runner cleans up the container, releases the semaphore, and `main.py` streams the file back to the user before deleting the temp directory.
+
+Key Operations in the Codebase
+==============================
+
+1. Where does the Conversion/Execution happen?
+----------------------------------------------
+The actual execution of the FaaS function (or conversion process) happens when the Docker container starts running the job.
+- File: `runner.py`
+  - Container Creation Line: Line 105 (`container = self.client.containers.create(...)`)
+  - Execution Start Line: Line 116 (`container.start()`)
+- (Note: In the older `converter.py` module, the equivalent lines are 140 for creation and 158 for starting execution).
+
+2. Where is the Docker Image created?
+-------------------------------------
+When a user deploys a new function, a dedicated Docker image is built on-the-fly containing their script.
+- File: `function_registry.py`
+  - Method: `_build_image`
+  - Image Build Line: Line 175 (`image, logs = self.client.images.build(...)`)
+
+3. Where is the Docker Container created?
+-----------------------------------------
+A new ephemeral Docker container is created for every single function invocation to ensure complete isolation.
+- File: `runner.py`
+  - Method: `run` inside `FunctionRunner`
+  - Container Create Line: Line 105 (`container = self.client.containers.create(...)`)
+
+4. Where does the specific function store the requirements and the script?
+-------------------------------------------------------------------------
+When a user uploads a script and a `requirements.txt` file, they are temporarily saved to a dynamically generated temporary folder on the host machine using Python's `tempfile.mkdtemp()`. 
+- This occurs in `function_registry.py` inside the `_build_image` method (around line 159). 
+- These files are then immediately copied *into* the Docker Image during the build process.
+- Once the Docker image is successfully built and stored in the Docker Engine, the temporary folder (including the original uploaded script and requirements file) on the host machine is deleted (cleaned up at line 185).
+- Conclusion: The files are permanently stored inside the built Docker Image itself, not as raw files on the host filesystem.
+
+Platform Design Philosophy
+==========================
+
+Why "Upload a script"? What if the user can't code?
+---------------------------------------------------
+The platform is built on a Function-as-a-Service (FaaS) model, similar to AWS Lambda or Google Cloud Functions. 
+
+- **For Developers ("Upload a Script"):** Allowing script uploads provides infinite flexibility. It lets developers execute custom, isolated data processing (like image manipulation, machine learning inference, or text parsing) without worrying about server provisioning, dependency conflicts, or security sandboxing.
+- **For Non-Coders:** If a user cannot code, your explanation should be that the platform is pre-equipped with "Built-in Functions" (such as `convert-to-pdf`, `image-grayscale`, and `image-resize`). Non-coding users do not need to upload scripts; they can simply select these pre-existing tools from the dashboard, upload their file, and click "Invoke". 
+
+The platform serves two distinct audiences: "Function Creators" (developers who write and upload the logic) and "Function Consumers" (end-users who just want to process their files using the available tools).
